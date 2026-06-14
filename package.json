@@ -1,0 +1,12 @@
+{
+  "name": "fsm-cli",
+  "version": "1.0.0",
+  "description": "Finite State Machine CLI - Definition, Visualization, Simulation, Code Generation",
+  "main": "fsm.js",
+  "bin": {
+    "fsm": "./fsm.js"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}

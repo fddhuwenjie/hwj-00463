@@ -1,0 +1,93 @@
+name: TCPConnection
+
+states:
+  - name: CLOSED
+    is_initial: true
+    is_final: true
+    entry_action: resetConnection
+  - name: LISTEN
+    is_initial: false
+    is_final: false
+    entry_action: startListening
+  - name: SYN_SENT
+    is_initial: false
+    is_final: false
+    entry_action: sendSYN
+  - name: SYN_RECEIVED
+    is_initial: false
+    is_final: false
+    entry_action: sendSYNACK
+  - name: ESTABLISHED
+    is_initial: false
+    is_final: false
+    entry_action: connectionEstablished
+    exit_action: connectionClosing
+  - name: FIN_WAIT_1
+    is_initial: false
+    is_final: false
+  - name: FIN_WAIT_2
+    is_initial: false
+    is_final: false
+  - name: CLOSING
+    is_initial: false
+    is_final: false
+  - name: TIME_WAIT
+    is_initial: false
+    is_final: false
+    entry_action: startTimeWait
+  - name: CLOSE_WAIT
+    is_initial: false
+    is_final: false
+  - name: LAST_ACK
+    is_initial: false
+    is_final: false
+
+transitions:
+  - from: CLOSED
+    to: LISTEN
+    event: passive_open
+  - from: CLOSED
+    to: SYN_SENT
+    event: active_open
+  - from: LISTEN
+    to: SYN_SENT
+    event: send
+  - from: LISTEN
+    to: SYN_RECEIVED
+    event: receive_SYN
+  - from: SYN_SENT
+    to: ESTABLISHED
+    event: receive_SYNACK
+  - from: SYN_SENT
+    to: CLOSED
+    event: timeout
+  - from: SYN_RECEIVED
+    to: ESTABLISHED
+    event: receive_ACK
+  - from: ESTABLISHED
+    to: FIN_WAIT_1
+    event: close
+  - from: ESTABLISHED
+    to: CLOSE_WAIT
+    event: receive_FIN
+  - from: FIN_WAIT_1
+    to: FIN_WAIT_2
+    event: receive_ACK
+  - from: FIN_WAIT_1
+    to: CLOSING
+    event: receive_FIN
+  - from: FIN_WAIT_2
+    to: TIME_WAIT
+    event: receive_FIN
+  - from: CLOSING
+    to: TIME_WAIT
+    event: receive_ACK
+  - from: TIME_WAIT
+    to: CLOSED
+    event: timeout
+  - from: CLOSE_WAIT
+    to: LAST_ACK
+    event: close
+  - from: LAST_ACK
+    to: CLOSED
+    event: receive_ACK

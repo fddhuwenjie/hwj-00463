@@ -1,0 +1,38 @@
+name: ParallelDoorLock
+
+parallel:
+  - name: Lock
+    states:
+      - name: Locked
+        is_initial: true
+        is_final: false
+        entry_action: engageLock
+      - name: Unlocked
+        is_initial: false
+        is_final: false
+        entry_action: disengageLock
+    transitions:
+      - from: Locked
+        to: Unlocked
+        event: unlock
+      - from: Unlocked
+        to: Locked
+        event: lock
+
+  - name: Alarm
+    states:
+      - name: Off
+        is_initial: true
+        is_final: false
+      - name: On
+        is_initial: false
+        is_final: false
+        entry_action: soundAlarm
+        exit_action: silenceAlarm
+    transitions:
+      - from: Off
+        to: On
+        event: trigger
+      - from: On
+        to: Off
+        event: reset

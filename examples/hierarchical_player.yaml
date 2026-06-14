@@ -1,0 +1,50 @@
+name: HierarchicalPlayer
+
+states:
+  - name: Off
+    is_initial: true
+    is_final: false
+    entry_action: powerOff
+  - name: On
+    is_initial: false
+    is_final: false
+    entry_action: powerOn
+    submachine:
+      name: PlayingState
+      states:
+        - name: Stopped
+          is_initial: true
+          is_final: false
+        - name: Playing
+          is_initial: false
+          is_final: false
+          entry_action: startPlayback
+          exit_action: stopPlayback
+        - name: Paused
+          is_initial: false
+          is_final: false
+          entry_action: suspendPlayback
+      transitions:
+        - from: Stopped
+          to: Playing
+          event: play
+        - from: Playing
+          to: Paused
+          event: pause
+        - from: Paused
+          to: Playing
+          event: resume
+        - from: Playing
+          to: Stopped
+          event: stop
+        - from: Paused
+          to: Stopped
+          event: stop
+
+transitions:
+  - from: Off
+    to: On
+    event: power_on
+  - from: On
+    to: Off
+    event: power_off

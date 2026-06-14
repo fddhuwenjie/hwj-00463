@@ -1,0 +1,32 @@
+name: TrafficLight
+
+states:
+  - name: Red
+    is_initial: true
+    is_final: false
+    entry_action: turnOnRedLight
+    exit_action: turnOffRedLight
+  - name: Green
+    is_initial: false
+    is_final: false
+    entry_action: turnOnGreenLight
+    exit_action: turnOffGreenLight
+  - name: Yellow
+    is_initial: false
+    is_final: false
+    entry_action: turnOnYellowLight
+    exit_action: turnOffYellowLight
+
+transitions:
+  - from: Red
+    to: Green
+    event: timer
+    action: startGreenTimer
+  - from: Green
+    to: Yellow
+    event: timer
+    action: startYellowTimer
+  - from: Yellow
+    to: Red
+    event: timer
+    action: startRedTimer

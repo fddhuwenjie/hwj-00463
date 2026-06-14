@@ -1,0 +1,71 @@
+name: VendingMachine
+
+states:
+  - name: Idle
+    is_initial: true
+    is_final: false
+    entry_action: displayWelcome
+  - name: Selecting
+    is_initial: false
+    is_final: false
+    entry_action: displayProducts
+  - name: Paying
+    is_initial: false
+    is_final: false
+    entry_action: requestPayment
+  - name: Dispensing
+    is_initial: false
+    is_final: false
+    entry_action: dispenseProduct
+    exit_action: resetSelection
+  - name: Refunding
+    is_initial: false
+    is_final: false
+    entry_action: refundMoney
+  - name: OutOfStock
+    is_initial: false
+    is_final: false
+    entry_action: displayOutOfStock
+
+transitions:
+  - from: Idle
+    to: Selecting
+    event: insert_coin
+    action: storeCoin
+  - from: Selecting
+    to: Paying
+    event: select_product
+    guard: productAvailable
+    action: calculatePrice
+  - from: Selecting
+    to: OutOfStock
+    event: select_product
+    guard: "count === 0"
+  - from: Selecting
+    to: Refunding
+    event: cancel
+    action: returnCoins
+  - from: Paying
+    to: Dispensing
+    event: pay
+    guard: "amount >= price"
+    action: deductPrice
+  - from: Paying
+    to: Paying
+    event: pay
+    guard: "amount < price"
+    action: requestMore
+  - from: Paying
+    to: Refunding
+    event: cancel
+    action: returnCoins
+  - from: Dispensing
+    to: Idle
+    event: product_taken
+    action: resetMachine
+  - from: Refunding
+    to: Idle
+    event: refund_taken
+  - from: OutOfStock
+    to: Idle
+    event: acknowledge
