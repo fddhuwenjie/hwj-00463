@@ -1,0 +1,41 @@
+name: RedundantStates
+
+states:
+  - name: A
+    is_initial: true
+    is_final: false
+  - name: B
+    is_initial: false
+    is_final: true
+  - name: C
+    is_initial: false
+    is_final: true
+  - name: D
+    is_initial: false
+    is_final: false
+
+transitions:
+  - from: A
+    to: B
+    event: x
+  - from: A
+    to: D
+    event: y
+  - from: B
+    to: B
+    event: x
+  - from: B
+    to: D
+    event: y
+  - from: C
+    to: C
+    event: x
+  - from: C
+    to: D
+    event: y
+  - from: D
+    to: D
+    event: x
+  - from: D
+    to: D
+    event: y

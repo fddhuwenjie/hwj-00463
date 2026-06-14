@@ -10,6 +10,10 @@ const simulator = require('./lib/simulator');
 const generator = require('./lib/generator');
 const pathsLib = require('./lib/paths');
 const composite = require('./lib/composite');
+const diffLib = require('./lib/diff');
+const mergeLib = require('./lib/merge');
+const replayLib = require('./lib/replay');
+const minimizationLib = require('./lib/minimization');
 
 function printUsage() {
   console.log(`
@@ -18,12 +22,12 @@ FSM CLI - Finite State Machine Definition, Visualization & Code Generation
 Usage:
   node fsm.js <command> <yaml-file> [options]
 
-Commands:
+Basic Commands:
   validate <file>              Validate FSM definition
   visualize <file>             Visualize FSM (default: ASCII)
     --format <format>          Output format: ascii, dot, mermaid
     --simple                   Simplified output (omit actions)
-  simulate <file>              Interactive simulation
+  simulate <file>              Interactive simulation (with breakpoints)
   generate <file>              Generate state machine code
     --lang <language>          Target: javascript, python, typescript
     -o, --output <file>        Output file path
@@ -33,23 +37,47 @@ Commands:
     --events <e1,e2,...>       Event sequence for coverage
   minimal-test <file>          Generate minimal test set
   flatten <file>               Flatten hierarchical FSM
-  help                         Show this help message
+
+Diff & Merge Commands:
+  diff <file1> <file2>         Show differences between two FSMs
+  merge <file1> <file2>        Merge two FSMs
+    --strategy <strategy>      Merge strategy: union, intersection, compose
+    --prefix1 <prefix>         Prefix for states from first FSM
+    --prefix2 <prefix>         Prefix for states from second FSM
+    --bridge-event <event>     Event name for compose strategy bridge
+    -o, --output <file>        Output merged YAML file
+
+Debug & Replay Commands:
+  replay <file> <events-file>  Replay event sequence
+    --step                     Step-by-step mode (press Enter to continue)
+    --until-state <state>      Stop when reaching specified state
+    --export-trace <file>      Export execution trace to JSON file
+
+Analysis Commands:
+  minimize <file>              Minimize FSM (merge equivalent states)
+    -o, --output <file>        Output minimized YAML file
+  equivalence <file1> <file2>  Check if two FSMs are behaviorally equivalent
+
+Simulation Breakpoint Commands (interactive):
+  break state <name>           Set breakpoint on entering state
+  break event <name>           Set breakpoint on event
+  clear state|event|all        Clear breakpoints
+  continue / step              Resume from breakpoint
 
 Examples:
   node fsm.js validate examples/traffic_light.yaml
   node fsm.js visualize examples/tcp_connection.yaml --format dot
-  node fsm.js visualize examples/vending_machine.yaml --format mermaid --simple
   node fsm.js simulate examples/vending_machine.yaml
-  node fsm.js generate examples/traffic_light.yaml --lang typescript -o output.ts
-  node fsm.js paths examples/tcp_connection.yaml --max-depth 8
-  node fsm.js coverage examples/traffic_light.yaml --events timer,timer,timer
-  node fsm.js minimal-test examples/traffic_light.yaml
-  node fsm.js flatten examples/parallel_example.yaml
+  node fsm.js diff examples/traffic_light.yaml examples/vending_machine.yaml
+  node fsm.js merge examples/traffic_light.yaml examples/vending_machine.yaml --strategy union
+  node fsm.js replay examples/vending_machine.yaml events.txt --step
+  node fsm.js minimize examples/traffic_light.yaml -o minimized.yaml
+  node fsm.js equivalence examples/traffic_light.yaml examples/vending_machine.yaml
 `);
 }
 
 function parseArgs(argv) {
-  const args = { command: null, file: null, options: {} };
+  const args = { command: null, file: null, file2: null, options: {} };
   const rest = argv.slice(2);
 
   if (rest.length === 0 || rest[0] === 'help' || rest[0] === '--help' || rest[0] === '-h') {
@@ -58,11 +86,24 @@ function parseArgs(argv) {
   }
 
   args.command = rest[0];
-  if (rest.length > 1 && !rest[1].startsWith('-')) {
-    args.file = rest[1];
+
+  const twoFileCommands = new Set(['diff', 'merge', 'equivalence']);
+  const isTwoFileCmd = twoFileCommands.has(args.command);
+
+  let pos = 1;
+  if (rest.length > pos && !rest[pos].startsWith('-')) {
+    args.file = rest[pos++];
   }
 
-  for (let i = 2; i < rest.length; i++) {
+  if (isTwoFileCmd && rest.length > pos && !rest[pos].startsWith('-')) {
+    args.file2 = rest[pos++];
+  }
+
+  if (args.command === 'replay' && rest.length > pos && !rest[pos].startsWith('-')) {
+    args.file2 = rest[pos++];
+  }
+
+  for (let i = pos; i < rest.length; i++) {
     if (rest[i] === '--format' && i + 1 < rest.length) {
       args.options.format = rest[++i];
     } else if (rest[i] === '--simple') {
@@ -75,6 +116,20 @@ function parseArgs(argv) {
       args.options.maxDepth = parseInt(rest[++i], 10);
     } else if (rest[i] === '--events' && i + 1 < rest.length) {
       args.options.events = rest[++i].split(',');
+    } else if (rest[i] === '--strategy' && i + 1 < rest.length) {
+      args.options.strategy = rest[++i];
+    } else if (rest[i] === '--prefix1' && i + 1 < rest.length) {
+      args.options.prefix1 = rest[++i];
+    } else if (rest[i] === '--prefix2' && i + 1 < rest.length) {
+      args.options.prefix2 = rest[++i];
+    } else if (rest[i] === '--bridge-event' && i + 1 < rest.length) {
+      args.options.bridgeEvent = rest[++i];
+    } else if (rest[i] === '--step') {
+      args.options.step = true;
+    } else if (rest[i] === '--until-state' && i + 1 < rest.length) {
+      args.options.untilState = rest[++i];
+    } else if (rest[i] === '--export-trace' && i + 1 < rest.length) {
+      args.options.exportTrace = rest[++i];
     }
   }
 
@@ -145,7 +200,7 @@ function cmdVisualize(args) {
   }
 }
 
-function cmdSimulate(args) {
+async function cmdSimulate(args) {
   if (!args.file) {
     console.error('Error: YAML file path required.');
     process.exit(1);
@@ -157,7 +212,7 @@ function cmdSimulate(args) {
     result.errors.forEach((e) => console.error(`  ✗ ${e}`));
     process.exit(1);
   }
-  simulator.simulate(fsm, args.options);
+  await simulator.simulate(fsm, args.options);
 }
 
 function cmdGenerate(args) {
@@ -256,38 +311,216 @@ function cmdFlatten(args) {
   }
 }
 
+function cmdDiff(args) {
+  if (!args.file || !args.file2) {
+    console.error('Error: Two YAML file paths required for diff.');
+    console.error('Usage: node fsm.js diff <file1> <file2>');
+    process.exit(1);
+  }
+  const fsm1 = parser.parseFSM(args.file);
+  const fsm2 = parser.parseFSM(args.file2);
+  const diff = diffLib.computeDiff(fsm1, fsm2);
+  console.log(diffLib.formatDiff(diff, args.file, args.file2));
+}
+
+function cmdMerge(args) {
+  if (!args.file || !args.file2) {
+    console.error('Error: Two YAML file paths required for merge.');
+    console.error('Usage: node fsm.js merge <file1> <file2> [options]');
+    process.exit(1);
+  }
+  const fsm1 = parser.parseFSM(args.file);
+  const fsm2 = parser.parseFSM(args.file2);
+  const strategy = args.options.strategy || 'union';
+
+  const mergeOptions = {};
+  if (args.options.prefix1) mergeOptions.prefix1 = args.options.prefix1;
+  if (args.options.prefix2) mergeOptions.prefix2 = args.options.prefix2;
+  if (args.options.bridgeEvent) mergeOptions.bridgeEvent = args.options.bridgeEvent;
+
+  try {
+    const merged = mergeLib.mergeFSMs(fsm1, fsm2, strategy, mergeOptions);
+    console.log(mergeLib.formatMergeResult(merged, strategy));
+
+    if (args.options.output) {
+      const yaml = require('js-yaml');
+      const cleanFSM = {
+        name: merged.name,
+        states: merged.states.map((s) => {
+          const clean = {
+            name: s.name,
+            is_initial: s.is_initial,
+            is_final: s.is_final,
+          };
+          if (s.entry_action) clean.entry_action = s.entry_action;
+          if (s.exit_action) clean.exit_action = s.exit_action;
+          return clean;
+        }),
+        transitions: merged.transitions.map((t) => {
+          const clean = {
+            from: t.from,
+            to: t.to,
+            event: t.event,
+          };
+          if (t.guard) clean.guard = t.guard;
+          if (t.action) clean.action = t.action;
+          return clean;
+        }),
+      };
+      const yamlContent = yaml.dump(cleanFSM, { lineWidth: -1 });
+      fs.writeFileSync(args.options.output, yamlContent, 'utf-8');
+      console.log(`\nMerged YAML written to: ${args.options.output}`);
+    }
+  } catch (e) {
+    console.error(`Error: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+async function cmdReplay(args) {
+  if (!args.file) {
+    console.error('Error: FSM YAML file path required.');
+    process.exit(1);
+  }
+  if (!args.file2) {
+    console.error('Error: Event sequence file path required.');
+    console.error('Usage: node fsm.js replay <fsm-file> <events-file> [options]');
+    process.exit(1);
+  }
+
+  const fsm = parser.parseFSM(args.file);
+  const validation = validator.validate(fsm);
+  if (!validation.valid) {
+    console.error('Error: FSM is invalid. Fix errors before replaying.');
+    validation.errors.forEach((e) => console.error(`  ✗ ${e}`));
+    process.exit(1);
+  }
+
+  const events = replayLib.parseEventSequenceFile(args.file2);
+  const options = {
+    step: args.options.step || false,
+    untilState: args.options.untilState || null,
+    exportTrace: args.options.exportTrace || null,
+  };
+
+  try {
+    await replayLib.replay(fsm, events, options);
+  } catch (e) {
+    console.error(`Error: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+function cmdMinimize(args) {
+  if (!args.file) {
+    console.error('Error: YAML file path required.');
+    process.exit(1);
+  }
+  const fsm = parser.parseFSM(args.file);
+
+  const minResult = minimizationLib.hopcroftMinimize(fsm);
+  const minimizedFSM = minimizationLib.buildMinimizedFSM(fsm, minResult);
+
+  console.log(minimizationLib.formatMinimizationResult(minimizedFSM));
+
+  if (args.options.output) {
+    const yaml = require('js-yaml');
+    const cleanFSM = {
+      name: minimizedFSM.name,
+      states: minimizedFSM.states.map((s) => {
+        const clean = {
+          name: s.name,
+          is_initial: s.is_initial,
+          is_final: s.is_final,
+        };
+        if (s.entry_action) clean.entry_action = s.entry_action;
+        if (s.exit_action) clean.exit_action = s.exit_action;
+        return clean;
+      }),
+      transitions: minimizedFSM.transitions.map((t) => {
+        const clean = {
+          from: t.from,
+          to: t.to,
+          event: t.event,
+        };
+        if (t.guard) clean.guard = t.guard;
+        if (t.action) clean.action = t.action;
+        return clean;
+      }),
+    };
+    const yamlContent = yaml.dump(cleanFSM, { lineWidth: -1 });
+    fs.writeFileSync(args.options.output, yamlContent, 'utf-8');
+    console.log(`\nMinimized YAML written to: ${args.options.output}`);
+  }
+}
+
+function cmdEquivalence(args) {
+  if (!args.file || !args.file2) {
+    console.error('Error: Two YAML file paths required for equivalence check.');
+    console.error('Usage: node fsm.js equivalence <file1> <file2>');
+    process.exit(1);
+  }
+  const fsm1 = parser.parseFSM(args.file);
+  const fsm2 = parser.parseFSM(args.file2);
+
+  const result = minimizationLib.checkEquivalence(fsm1, fsm2);
+  console.log(minimizationLib.formatEquivalenceResult(result, fsm1.name, fsm2.name));
+}
+
 const args = parseArgs(process.argv);
 
-switch (args.command) {
-  case 'help':
-    printUsage();
-    break;
-  case 'validate':
-    cmdValidate(args);
-    break;
-  case 'visualize':
-    cmdVisualize(args);
-    break;
-  case 'simulate':
-    cmdSimulate(args);
-    break;
-  case 'generate':
-    cmdGenerate(args);
-    break;
-  case 'paths':
-    cmdPaths(args);
-    break;
-  case 'coverage':
-    cmdCoverage(args);
-    break;
-  case 'minimal-test':
-    cmdMinimalTest(args);
-    break;
-  case 'flatten':
-    cmdFlatten(args);
-    break;
-  default:
-    console.error(`Unknown command: ${args.command}`);
-    printUsage();
-    process.exit(1);
+async function main() {
+  switch (args.command) {
+    case 'help':
+      printUsage();
+      break;
+    case 'validate':
+      cmdValidate(args);
+      break;
+    case 'visualize':
+      cmdVisualize(args);
+      break;
+    case 'simulate':
+      await cmdSimulate(args);
+      break;
+    case 'generate':
+      cmdGenerate(args);
+      break;
+    case 'paths':
+      cmdPaths(args);
+      break;
+    case 'coverage':
+      cmdCoverage(args);
+      break;
+    case 'minimal-test':
+      cmdMinimalTest(args);
+      break;
+    case 'flatten':
+      cmdFlatten(args);
+      break;
+    case 'diff':
+      cmdDiff(args);
+      break;
+    case 'merge':
+      cmdMerge(args);
+      break;
+    case 'replay':
+      await cmdReplay(args);
+      break;
+    case 'minimize':
+      cmdMinimize(args);
+      break;
+    case 'equivalence':
+      cmdEquivalence(args);
+      break;
+    default:
+      console.error(`Unknown command: ${args.command}`);
+      printUsage();
+      process.exit(1);
+  }
 }
+
+main().catch((e) => {
+  console.error('Fatal error:', e.message);
+  process.exit(1);
+});

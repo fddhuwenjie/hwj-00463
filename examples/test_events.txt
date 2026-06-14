@@ -1,0 +1,5 @@
+insert_coin
+select_product productAvailable=true count=5 price=10 amount=5
+pay amount=5
+pay amount=10
+product_taken

@@ -1,0 +1,32 @@
+name: SimpleAcceptorB
+
+states:
+  - name: Q0
+    is_initial: true
+    is_final: false
+  - name: Q1
+    is_initial: false
+    is_final: true
+  - name: Q2
+    is_initial: false
+    is_final: false
+
+transitions:
+  - from: Q0
+    to: Q1
+    event: a
+  - from: Q0
+    to: Q2
+    event: b
+  - from: Q1
+    to: Q1
+    event: a
+  - from: Q1
+    to: Q2
+    event: b
+  - from: Q2
+    to: Q2
+    event: a
+  - from: Q2
+    to: Q2
+    event: b

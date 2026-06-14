@@ -1,0 +1,32 @@
+name: SimpleAcceptorA
+
+states:
+  - name: S0
+    is_initial: true
+    is_final: false
+  - name: S1
+    is_initial: false
+    is_final: true
+  - name: S2
+    is_initial: false
+    is_final: false
+
+transitions:
+  - from: S0
+    to: S1
+    event: a
+  - from: S0
+    to: S2
+    event: b
+  - from: S1
+    to: S1
+    event: a
+  - from: S1
+    to: S2
+    event: b
+  - from: S2
+    to: S2
+    event: a
+  - from: S2
+    to: S2
+    event: b
